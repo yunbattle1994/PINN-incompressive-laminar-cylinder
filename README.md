@@ -5,7 +5,7 @@
 1. 采用流函数的梯度信息求速度，自然地满足连续方程
 2. 引入柯西应力张量
 
-![模型框架](.//模型框架.PNG)
+![模型框架](https://github.com/yunbattle1994/PINN-incompressive-laminar-cylinder/blob/main/image/fig1.jpg)
 
 
 
