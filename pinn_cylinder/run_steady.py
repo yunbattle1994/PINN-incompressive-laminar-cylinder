@@ -104,7 +104,7 @@ def train(inn_var, BCs, out_true, model, Loss, optimizer, scheduler, log_loss):
         out_var = out_var[..., 0:3]
         y_in = inn_var.detach()[BC_in, 1:2]
 
-        bcs_loss_in = Loss(out_var[BC_in, 1:], torch.cat((4*U_max*y_in*(0.41-y_in)/(0.41**2), 0*y_in), dim=-1))
+        bcs_loss_in = Loss(out_var[BC_in, 1:], torch.cat((4*U_max*y_in*(Box[-1] - Box[1]-y_in)/((Box[-1] - Box[1])**2), 0*y_in), dim=-1))
         bcs_loss_out = (out_var[BC_out, 0] ** 2).mean()
         bcs_loss_wall = (out_var[BC_wall, 1:] ** 2).mean()
         bcs_loss_top = (out_var[BC_top, 1:]**2).mean()
