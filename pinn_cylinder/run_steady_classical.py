@@ -52,7 +52,7 @@ def BCS_ICS(nodes, box):
     BCS.append(Index[nodes[:, 0] == box[2]])  # outlet
     BCS.append(Index[nodes[:, 1] == box[1]])  # top
     BCS.append(Index[nodes[:, 1] == box[3]])  # bottom
-    BCS.append(Index[np.abs((nodes[:, 0]-0.2)**2 + (nodes[:, 1]-0.2)**2 - 0.05**2) < 1e-7])  # cylinder wall
+    BCS.append(Index[np.abs((nodes[:, 0]-0.2)**2 + (nodes[:, 1]-0.2)**2 - (D/2)**2) < 1e-7])  # cylinder wall
 
     if nodes.shape[-1] == 3:
         BCS.append(Index[nodes[:, 2] == 0])  # initial
@@ -97,7 +97,7 @@ def train(inn_var, BCs, out_true, model, Loss, optimizer, scheduler, log_loss):
         out_var = out_var[..., 0:3]
         y_in = inn_var.detach()[BC_in, 1:2]
 
-        bcs_loss_in = Loss(out_var[BC_in, 1:], torch.cat((4*U_max*y_in*(0.41-y_in)/(0.41**2), 0*y_in), dim=-1))
+        bcs_loss_in = Loss(out_var[BC_in, 1:], torch.cat((4*U_max*y_in*((Box[-1] - Box[1])-y_in)/((Box[-1] - Box[1])**2), 0*y_in), dim=-1))
         bcs_loss_out = (out_var[BC_out, 0] ** 2).mean()
         bcs_loss_wall = (out_var[BC_wall, 1:] ** 2).mean()
         bcs_loss_top = (out_var[BC_top, 1:]**2).mean()
@@ -145,7 +145,7 @@ if __name__ == '__main__':
 
     #################### 定义问题相关参数 ####################
     U_max = 1.0 # 入口流速的最大值
-    Rho, Miu = 1.0, 0.02
+    Rho, Miu, D = 1.0, 0.02, 0.1
     Box = [0, 0, 1.1, 0.41]  # 矩形流域
     
     
@@ -160,7 +160,7 @@ if __name__ == '__main__':
     # 采用三角形 对非结构化网格建立节点连接关系
     triang = matplotlib.tri.Triangulation(fields_fluent[:, 0], fields_fluent[:, 1])
     triang.set_mask(np.hypot(fields_fluent[triang.triangles, 0].mean(axis=1) - 0.2,
-                             fields_fluent[triang.triangles, 1].mean(axis=1) - 0.2) < 0.05)
+                             fields_fluent[triang.triangles, 1].mean(axis=1) - 0.2) < D/2)
     # plt.figure(1, figsize=(20, 5))
     # t = plt.tricontourf(triang, fields_fluent[:, 2])
     # plt.axis('equal')
