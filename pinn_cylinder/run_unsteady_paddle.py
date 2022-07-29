@@ -124,7 +124,7 @@ def read_paddle_data(num_time):
     times_list = np.arange(1, 51)#np.random.choice(times_list_all, num_time)
 
     for time in times_list:
-        data = np.loadtxt(file_path + '/probe/probe0.' + str(time) + '.csv', skiprows=1, delimiter=',')[..., (4, 5, 0, 1, 2,)]
+        data = np.loadtxt(file_path + '/probe/probe0.' + str(time) + '.csv', skiprows=1, delimiter=',')[..., (5, 6, 0, 1, 2,)]
         t_len = data.shape[0]
         supervised_t = np.array([time] * t_len).reshape((-1, 1))
         data = np.concatenate((data[..., (0, 1)], supervised_t, data[..., (2, 3, 4)]), axis=1)
