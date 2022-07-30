@@ -97,12 +97,18 @@ def read_paddle_data(num_time):
     outlet = np.loadtxt(file_path + 'domain_outlet.csv', skiprows=1, delimiter=',')[..., (4, 5, 0, 1, 2,)]
     train = np.loadtxt(file_path + 'domain_train.csv', skiprows=1, delimiter=',')[..., (4, 5, 0, 1, 2,)]
     initial = np.loadtxt(file_path + 'initial\\ic0.1.csv', skiprows=1, delimiter=',')[..., (4, 5, 0, 1, 2,)]
+    ind_bot = initial[:, 1] == -20.
+    bot = initial[ind_bot]
+    ind_top = initial[:, 1] == 20.
+    top = initial[ind_top]
 
     # plt.figure(1)
-    # plt.plot(cyl[:, 0], cyl[:, 1], 'r.')
-    # plt.plot(inlet[:, 0], inlet[:, 1], 'b.')
-    # plt.plot(outlet[:, 0], outlet[:, 1], 'b.')
-    # plt.plot(train[:, 0], train[:, 1], 'g.')
+    # plt.plot(cyl[:, 0], cyl[:, 1], 'k.')
+    # plt.plot(inlet[:, 0], inlet[:, 1], 'r.')
+    # plt.plot(bot[:, 0], bot[:, 1], 'g.')
+    # plt.plot(top[:, 0], top[:, 1], 'b.')
+    # plt.plot(outlet[:, 0], outlet[:, 1], 'y.')
+    # # plt.plot(train[:, 0], train[:, 1], 'g.')
     # plt.show()
     # plt.figure(2)
     # plt.plot(train[:, 0], train[:, 1], 'k.')
@@ -121,7 +127,17 @@ def read_paddle_data(num_time):
     times_list_all = []
     dirs = os.listdir(file_path + 'probe\\')
     #####获取时间
+    # for file in dirs:
+    #     time = float(file[5:-4])
+    #     times_list_all.append(time)
+    # times_list_all = np.array(times_list_all)
+
+
     times_list = np.arange(1, 51)#np.random.choice(times_list_all, num_time)
+
+
+    # times_list = np.random.choice(times_list_all, num_time)
+    #
 
     for time in times_list:
         data = np.loadtxt(file_path + '/probe/probe0.' + str(time) + '.csv', skiprows=1, delimiter=',')[..., (5, 6, 0, 1, 2,)]
@@ -134,11 +150,13 @@ def read_paddle_data(num_time):
 
     inlet = replicate_time_list(times_list, inlet.shape[0],  inlet)
     outlet = replicate_time_list(times_list, outlet.shape[0],  outlet)
-    initial = replicate_time_list([0.1], initial.shape[0],  initial)
+    bot = replicate_time_list(times_list, bot.shape[0],  bot)
+    top = replicate_time_list(times_list, top.shape[0],  top)
+    initial = replicate_time_list([1], initial.shape[0],  initial)
     cyl = replicate_time_list(times_list, cyl.shape[0],  cyl)
     train = replicate_time_list(times_list, train.shape[0],  train)
 
-    return train,  inlet, outlet, cyl, full_supervised_data, initial
+    return train,  inlet, outlet, top, bot, cyl, full_supervised_data, initial
 
 
 def replicate_time_list(time_list, domain_shape, spatial_data):
@@ -163,13 +181,17 @@ def replicate_time_list(time_list, domain_shape, spatial_data):
 def train(inn_var, BCs, out_true, model, Loss, optimizer, scheduler, log_loss):
     BC_in = torch.tensor(BCs[0][..., 0:3], dtype=torch.float32).to(device)
     BC_out = torch.tensor(BCs[1][..., 0:3], dtype=torch.float32).to(device)
-    BC_wall = torch.tensor(BCs[2][..., 0:3], dtype=torch.float32).to(device)
+    BC_top = torch.tensor(BCs[2][..., 0:3], dtype=torch.float32).to(device)
+    BC_bot = torch.tensor(BCs[3][..., 0:3], dtype=torch.float32).to(device)
+    BC_wall = torch.tensor(BCs[4][..., 0:3], dtype=torch.float32).to(device)
     BC_initial = torch.tensor(BCs[-1][..., 0:3], dtype=torch.float32).to(device)
     field_supervised = torch.tensor(out_true[..., 0:3], dtype=torch.float32).to(device)
 
     BC_in_m = torch.tensor(BCs[0][..., 3:], dtype=torch.float32).to(device)
     BC_out_m = torch.tensor(BCs[1][..., 3:], dtype=torch.float32).to(device)
-    BC_wall_m = torch.tensor(BCs[2][..., 3:], dtype=torch.float32).to(device)
+    BC_top_m = torch.tensor(BCs[2][..., 3:], dtype=torch.float32).to(device)
+    BC_bot_m = torch.tensor(BCs[3][..., 3:], dtype=torch.float32).to(device)
+    BC_wall_m = torch.tensor(BCs[4][..., 3:], dtype=torch.float32).to(device)
     BC_initial_m = torch.tensor(BCs[-1][..., 3:], dtype=torch.float32).to(device)
     field_supervised_m = torch.tensor(out_true[..., 3:], dtype=torch.float32).to(device)
 
@@ -177,6 +199,8 @@ def train(inn_var, BCs, out_true, model, Loss, optimizer, scheduler, log_loss):
         inn_var.requires_grad_(True)
         BC_in.requires_grad_(True)
         BC_out.requires_grad_(True)
+        BC_top.requires_grad_(True)
+        BC_bot.requires_grad_(True)
         BC_wall.requires_grad_(True)
         BC_initial.requires_grad_(True)
         field_supervised.requires_grad_(True)
@@ -197,16 +221,27 @@ def train(inn_var, BCs, out_true, model, Loss, optimizer, scheduler, log_loss):
         pred_out = model(BC_out)
         pred_out = model.output_transform(BC_out, pred_out)
         bcs_loss_out = Loss(pred_out[..., 0], BC_out_m[..., 0])
+
         ##wall loss u,v
+        pred_top = model(BC_top)
+        pred_top = model.output_transform(BC_top, pred_top)
+        bcs_loss_top = Loss(pred_top[..., (1,2)], BC_top_m[..., (1,2)])
+
+        pred_bot = model(BC_bot)
+        pred_bot = model.output_transform(BC_bot, pred_bot)
+        bcs_loss_bot = Loss(pred_bot[..., (1,2)], BC_bot_m[..., (1,2)])
+
         pred_wall = model(BC_wall)
         pred_wall = model.output_transform(BC_wall, pred_wall)
         bcs_loss_wall = Loss(pred_wall[..., (1, 2)], BC_wall_m[..., (1, 2)])
+
         ##initial loss u v p
         pred_initial = model(BC_initial)
         pred_initial = model.output_transform(BC_initial, pred_initial)
         bcs_loss_initial = Loss(pred_initial[..., (0, 1, 2)], BC_initial_m[..., (0, 1, 2)])
 
-        bcs_loss = bcs_loss_in * 10 + bcs_loss_out + bcs_loss_wall * 10 + bcs_loss_initial * 10
+        bcs_loss = bcs_loss_in * 10 + bcs_loss_out + bcs_loss_top * 10 + bcs_loss_bot * 10\
+                   + bcs_loss_wall * 10 + bcs_loss_initial * 10
 
         ## supervised loss
         pred_field = model(field_supervised)
@@ -215,12 +250,12 @@ def train(inn_var, BCs, out_true, model, Loss, optimizer, scheduler, log_loss):
 
         eqs_loss = (res_i ** 2).mean()
 
-        loss_batch = bcs_loss * 1. + eqs_loss + supervised_loss *10
+        loss_batch = bcs_loss * 1. + eqs_loss + supervised_loss * 10
 
         loss_batch.backward()
 
         # data_loss = Loss(out_var, out_true)
-        log_loss.append([eqs_loss.item(), bcs_loss.item(),
+        log_loss.append([eqs_loss.item(), bcs_loss.item(),  bcs_loss_top.item(), bcs_loss_bot.item(),
                          bcs_loss_wall.item(), bcs_loss_in.item(),
                          bcs_loss_out.item(), bcs_loss_initial.item(), supervised_loss.item()])
 
@@ -265,8 +300,8 @@ if __name__ == '__main__':
     data = list(map(np.random.permutation, data_ori)) # np.random.shuffle & random.shuffle 返回None,此外， python 3 中map返回的是迭代器
     input = data[0]
     input = torch.tensor(input[:, :3], dtype=torch.float32).to(device)
-    BCs = (data[1], data[2], data[3], data[5]) ## 边界数据
-    field = data[4]   ##检测的流场点
+    BCs = (data[1], data[2], data[3], data[4], data[5], data[-1]) ## 边界数据
+    field = data[-2]   ##检测的流场点
 
 
     # 采用三角形 对非结构化网格建立节点连接关系
@@ -296,12 +331,12 @@ if __name__ == '__main__':
     ################################### 训练 #####################################
     star_time = time.time()
     log_loss = []
-    epoch_start = 0;
+    epoch_start = 0
     """load a pre-trained model"""
-    # checkpoint = torch.load(work_path + '\\latest_model.pth')
+    # checkpoint = torch.load(work_path + '\\latest_model4.pth')
     # epoch_start = checkpoint['epoch']
-    # Net_model.loadmodel(work_path + '\\latest_model.pth')
-    #
+    # Net_model.loadmodel(work_path + '\\latest_model4.pth')
+
 
     for epoch in range(epoch_start, Boundary_epoch[-1]):
 
@@ -310,27 +345,28 @@ if __name__ == '__main__':
 
         if epoch < 300000:
 
-            iter = 1
+            iter = 3
             for i in range(iter):
                 data_itr = list(map(lambda x: x[i * int(x.shape[0] / iter):(i + 1) * int(x.shape[0] / iter)], data))
                 input = data_itr[0]
                 input = torch.tensor(input[:, :3], dtype=torch.float32).to(device)
-                BCs = (data_itr[1], data_itr[2], data_itr[3], data_itr[5])  ## 边界数据
-                field = data_itr[4]  ##检测的流场点
+                # BCs = (data[1], data[2], data[3], data[4], data[5], data[-1])  ## 边界数据
+                BCs = (data_itr[1], data_itr[2], data_itr[3], data_itr[4], data_itr[5], data_itr[-1])  ## 边界数据
+                field = data_itr[-2]  ##检测的流场点
                 train(input, BCs, field, Net_model, L2Loss, Optimizer_1, Scheduler_1, log_loss)
             learning_rate = Optimizer_1.state_dict()['param_groups'][0]['lr']
         if epoch >= 300000:
-            iter = 1
+            iter = 3
             for i in range(iter):
                 data_itr = list(map(lambda x: x[i * int(x.shape[0] / iter):(i + 1) * int(x.shape[0] / iter)], data))
                 input = data_itr[0]
                 input = torch.tensor(input[:, :3], dtype=torch.float32).to(device)
-                BCs = (data_itr[1], data_itr[2], data_itr[3], data_itr[5])  ## 边界数据
-                field = data_itr[4]  ##检测的流场点
+                BCs = (data_itr[1], data_itr[2], data_itr[3], data_itr[4], data_itr[5], data_itr[-1])  ## 边界数据
+                field = data_itr[-2]  ##检测的流场点
                 train(input, BCs, field, Net_model, L2Loss, Optimizer_2, Scheduler_2, log_loss)
             learning_rate = Optimizer_2.state_dict()['param_groups'][0]['lr']
 
-        if epoch > 0 and epoch % 500 == 0:
+        if epoch > 0 and epoch % 50 == 0:
             print('epoch: {:6d}, lr: {:.1e}, cost: {:.2e}, dat_loss: {:.2e}, eqs_loss: {:.2e}, bcs_loss: {:.2e}'.
                   format(epoch, learning_rate, time.time() - star_time,
                          log_loss[-1][-1], log_loss[-1][0], log_loss[-1][1],))
@@ -351,10 +387,12 @@ if __name__ == '__main__':
             Visual.plot_loss(np.arange(len(log_loss)), np.array(log_loss)[:, 0], 'eqs_loss')
             plt.subplot(212)
             Visual.plot_loss(np.arange(len(log_loss)), np.array(log_loss)[:, 1], 'bcs_loss')
-            Visual.plot_loss(np.arange(len(log_loss)), np.array(log_loss)[:, 2], 'wall_loss')
-            Visual.plot_loss(np.arange(len(log_loss)), np.array(log_loss)[:, 3], 'in_loss')
-            Visual.plot_loss(np.arange(len(log_loss)), np.array(log_loss)[:, 4], 'out_loss')
-            Visual.plot_loss(np.arange(len(log_loss)), np.array(log_loss)[:, 5], 'ini_loss')
+            Visual.plot_loss(np.arange(len(log_loss)), np.array(log_loss)[:, 2], 'top_loss')
+            Visual.plot_loss(np.arange(len(log_loss)), np.array(log_loss)[:, 3], 'bot_loss')
+            Visual.plot_loss(np.arange(len(log_loss)), np.array(log_loss)[:, 4], 'wall_loss')
+            Visual.plot_loss(np.arange(len(log_loss)), np.array(log_loss)[:, 5], 'in_loss')
+            Visual.plot_loss(np.arange(len(log_loss)), np.array(log_loss)[:, 6], 'out_loss')
+            Visual.plot_loss(np.arange(len(log_loss)), np.array(log_loss)[:, 7], 'ini_loss')
             plt.savefig(os.path.join(work_path, 'detail_loss.svg'))
 
 
@@ -369,8 +407,23 @@ if __name__ == '__main__':
             plt.figure(3, figsize=(30, 8))
             plt.clf()
             Visual.plot_fields_tr(field_visual_t, field_visual_p, input_visual_p.detach().cpu().numpy(), triang)
+
             # plt.savefig(res_path + 'field_' + str(t) + '-' + str(epoch) + '.jpg')
             plt.savefig(os.path.join(work_path, 'global_' + str(epoch) + '.jpg'), dpi=200)
             plt.savefig(os.path.join(work_path, 'global_now.jpg'))
+
+            for i in range(5):
+                input_visual_p = torch.tensor(data[-1][..., :3], dtype=torch.float32)  # 取初场的空间坐标
+                tim = (i+1)*10
+                input_visual_p[:, -1] = input_visual_p[:, -1] -1 + tim# 时间
+                field_visual_p, _ = inference(input_visual_p, Net_model)
+                field_visual_p = field_visual_p.cpu().numpy()[..., 0:3]
+                # field_visual_t = field_visual_p
+
+                plt.figure(3, figsize=(30, 8))
+                plt.clf()
+                Visual.plot_fields_tr(field_visual_p, field_visual_p, input_visual_p.detach().cpu().numpy(), triang)
+
+                plt.savefig(os.path.join(work_path, 'global_' + str(epoch) +'time'+str(tim)  + '.jpg'), dpi=200)
 
             torch.save({'epoch': epoch, 'model': Net_model.state_dict(), }, os.path.join(work_path, 'latest_model4.pth'))
